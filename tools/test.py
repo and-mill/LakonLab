@@ -51,6 +51,10 @@ def parse_args():
     parser.add_argument('config', help='test config file path')
     parser.add_argument('--ckpt', help='checkpoint file')
     parser.add_argument(
+        '--imagenet-root',
+        help='Local timm ImageNet WebDataset directory; overrides ImageNet roots. '
+             'Alternatively set IMAGENET_ROOT. Generation-only tests need no data.')
+    parser.add_argument(
         '--launcher',
         choices=['none', 'pytorch', 'slurm', 'mpi', 'flyte'],
         default='none',
@@ -127,12 +131,27 @@ def setup_multi_processes(cfg):
         os.environ['MKL_NUM_THREADS'] = str(mkl_num_threads)
 
 
+def override_imagenet_root(data_cfg, root):
+    """Apply a root to ImageNet entries, including nested dataset wrappers."""
+    if isinstance(data_cfg, dict):
+        if data_cfg.get('type') == 'ImageNet':
+            data_cfg['data_root'] = root
+            data_cfg['datalist_path'] = None
+        for value in data_cfg.values():
+            override_imagenet_root(value, root)
+    elif isinstance(data_cfg, (list, tuple)):
+        for value in data_cfg:
+            override_imagenet_root(value, root)
+
+
 def main():
     args = parse_args()
 
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    if args.imagenet_root is not None:
+        override_imagenet_root(cfg.data, args.imagenet_root)
 
     setup_multi_processes(cfg)
 

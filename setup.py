@@ -102,5 +102,6 @@ if __name__ == '__main__':
         packages=find_packages(exclude=('configs', 'data', 'tools', 'demo', 'work_dirs')),
         license='MIT License',
         include_package_data=True,
+        package_data={'lakonlab.datasets': ['imagenet_class_names.json']},
         install_requires=parse_requirements('requirements.txt'),
         zip_safe=False)

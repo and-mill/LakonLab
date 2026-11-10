@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Hansheng Chen
 
 import os
+import json
 import pickle
 import tarfile
 import tempfile
@@ -56,9 +57,9 @@ def image_preproc(pil_image, image_size, random_flip=False):
 class ImageNet(Dataset):
     def __init__(
             self,
-            data_root='data/imagenet/train',
-            datalist_path='data/imagenet/train.txt',
-            label2name_path='data/imagenet/imagenet1000_clsidx_to_labels.txt',
+            data_root=None,
+            datalist_path=None,
+            label2name_path=None,
             ignore_cached_latents=False,
             random_flip=True,
             negative_label=1000,
@@ -69,8 +70,12 @@ class ImageNet(Dataset):
             test_label_repeat=1,
             test_label_sampling='random',
             test_mode=False,
-            num_test_images=50000):
+            num_test_images=50000,
+            split='train',
+            shard_index_cache_dir=None):
         super().__init__()
+        data_root = os.path.expanduser(
+            data_root or os.environ.get('IMAGENET_ROOT', 'data/timm_imagenet_1k_wds'))
         self.tar_extract_dir = tar_extract_dir
         self.original_data_root = data_root
         self.data_root = data_root if test_mode else self.prepare_data_root(data_root)
@@ -90,13 +95,16 @@ class ImageNet(Dataset):
         self.test_mode = test_mode
         self.num_test_images = num_test_images
 
-        self.label2name = {}
-        label2name_text = FileClient.infer_client(uri=self.label2name_path).get_text(self.label2name_path)
+        # Generation only needs names, class IDs and noise, not image files.
+        with open(os.path.join(os.path.dirname(__file__), 'imagenet_class_names.json')) as handle:
+            self.label2name = dict(enumerate(json.load(handle)))
+        label2name_text = (FileClient.infer_client(uri=self.label2name_path).get_text(self.label2name_path)
+                           if self.label2name_path is not None else '')
         for line in label2name_text.split('\n'):
             line = line.strip()
             if len(line) == 0:
                 continue
-            idx, name = line.split(':')
+            idx, name = line.split(':', 1)
             idx, name = idx.strip(), name.strip()
             if name[-1] == ',':
                 name = name[:-1]
@@ -106,7 +114,14 @@ class ImageNet(Dataset):
                 name = name[1:-1]
             self.label2name[int(idx)] = name
 
-        if not test_mode:
+        self.shard_index = None
+        if not test_mode and datalist_path is None:
+            from .imagenet_wds import ImageNetShardIndex
+            self.shard_index = ImageNetShardIndex(
+                self.data_root, split=split, cache_dir=shard_index_cache_dir)
+            mmcv.print_log(f'ImageNet WebDataset: {len(self.shard_index)} images from '
+                           f'{len(self.shard_index.shards)} shards', logger=get_root_logger())
+        elif not test_mode:
             self.all_paths = []
             self.all_labels = []
             datalist_text = FileClient.infer_client(uri=self.datalist_path).get_text(self.datalist_path)
@@ -160,7 +175,9 @@ class ImageNet(Dataset):
         return self._file_client
 
     def __len__(self):
-        return self.num_test_images if self.test_mode else len(self.all_paths)
+        if self.test_mode:
+            return self.num_test_images
+        return len(self.shard_index) if self.shard_index is not None else len(self.all_paths)
 
     def __getitem__(self, idx):
         data = dict(ids=DC(idx, cpu_only=True))
@@ -179,10 +196,14 @@ class ImageNet(Dataset):
             data.update(noise=noise)
 
         else:
-            rel_data_path = self.all_paths[idx]
+            if self.shard_index is not None:
+                data_bytes, shard_label, data_path = self.shard_index.read(idx)
+                rel_data_path = data_path
+            else:
+                rel_data_path = self.all_paths[idx]
+                data_path = self.file_client.join_path(self.data_root, rel_data_path)
+                data_bytes = self.file_client.get(data_path)
             data.update(paths=DC(rel_data_path, cpu_only=True))
-            data_path = self.file_client.join_path(self.data_root, rel_data_path)
-            data_bytes = self.file_client.get(data_path)
             data_bytesio = BytesIO(data_bytes)
             ext = os.path.splitext(data_path)[-1]
             if ext.lower() in ('.pth', '.pt', '.pkl'):
@@ -213,7 +234,8 @@ class ImageNet(Dataset):
                                 img_data, self.image_size, random_flip=self.random_flip
                             )).float().permute(2, 0, 1) / 255.0)
             elif ext.lower() in ('.jpg', '.jpeg', '.png'):
-                label = torch.tensor(self.all_labels[idx], dtype=torch.long)
+                label = torch.tensor(shard_label if self.shard_index is not None
+                                     else self.all_labels[idx], dtype=torch.long)
                 if self.return_image_bytes:
                     data.update(image_bytes=DC(data_bytes, cpu_only=True))
                 img_data = Image.open(data_bytesio).convert('RGB')
