@@ -15,7 +15,8 @@ beautifulsoup4
 wandb
 open_clip_torch
 gradio==5.49.0
-datasets
+# Older datasets releases import PyExtensionType, removed in PyArrow 21.
+datasets>=2.21.0
 boto3
 lpips
 webdataset
