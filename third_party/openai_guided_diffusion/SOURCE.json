@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/openai/guided-diffusion",
+  "commit": "22e0df8183507e13a7813f8d38d51b072ca1e67c",
+  "evaluator_url": "https://raw.githubusercontent.com/openai/guided-diffusion/22e0df8183507e13a7813f8d38d51b072ca1e67c/evaluations/evaluator.py",
+  "evaluator_sha256": "c8f10ab1406c45d105d7f5b347e5be06c118bd2ddef1c54789c263ebae7f1ca7"
+}

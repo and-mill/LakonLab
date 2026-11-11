@@ -1,0 +1,9 @@
+# Isolated environment for the unchanged OpenAI evaluator.
+# tensorflow replaces the retired tensorflow-gpu distribution.
+# NumPy <1.24 preserves upstream np.bool; SciPy preserves sqrtm(disp=False).
+tensorflow==2.15.1
+numpy==1.23.5
+scipy==1.11.4
+requests
+tqdm
+Pillow

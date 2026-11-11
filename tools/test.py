@@ -35,14 +35,6 @@ from mmcv.parallel import MMDataParallel
 from mmcv.runner import get_dist_info, init_dist, load_checkpoint
 from mmcv.fileio import FileClient
 
-from lakonlab.models import build_model
-from lakonlab.utils import get_root_logger
-from lakonlab.evaluation import build_metric
-from lakonlab.evaluation.eval_hooks import evaluate
-from lakonlab.datasets import build_dataset, build_dataloader, unique_dataloaders
-from lakonlab.parallel.utils import prepare_module_wrapper, apply_module_wrapper
-from lakonlab.runner.checkpoint import exists_ckpt, clear_checkpoint_cache
-from lakonlab.runner.utils import set_random_seed
 
 
 def parse_args():
@@ -50,6 +42,8 @@ def parse_args():
         description='Test and eval a model')
     parser.add_argument('config', help='test config file path')
     parser.add_argument('--ckpt', help='checkpoint file')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Report download/cache paths without downloading, generating, or writing experiment files.')
     parser.add_argument(
         '--imagenet-root',
         help='Local timm ImageNet WebDataset directory; overrides ImageNet roots. '
@@ -152,6 +146,21 @@ def main():
         cfg.merge_from_dict(args.cfg_options)
     if args.imagenet_root is not None:
         override_imagenet_root(cfg.data, args.imagenet_root)
+
+    if args.dry_run:
+        if int(os.environ.get('RANK', '0')) == 0:
+            from eval_download_plan import report_downloads
+            report_downloads(cfg, args)
+        return
+
+    from lakonlab.models import build_model
+    from lakonlab.utils import get_root_logger
+    from lakonlab.evaluation import build_metric
+    from lakonlab.evaluation.eval_hooks import evaluate
+    from lakonlab.datasets import build_dataset, build_dataloader, unique_dataloaders
+    from lakonlab.parallel.utils import prepare_module_wrapper, apply_module_wrapper
+    from lakonlab.runner.checkpoint import exists_ckpt, clear_checkpoint_cache
+    from lakonlab.runner.utils import set_random_seed
 
     setup_multi_processes(cfg)
 

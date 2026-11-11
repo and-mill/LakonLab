@@ -32,3 +32,4 @@ build/
 .claude/
 
 experiments/
+fid_stats/
